@@ -1,7 +1,7 @@
 from typing import List
 
-from fastapi import FastAPI, Depends
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import FastAPI, Depends, HTTPException
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
 from jose import jwt, exceptions
 from sqlalchemy.orm import Session
@@ -23,8 +23,33 @@ app = FastAPI()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
+def get_token(token: str = Depends(oauth2_scheme)):
+    try:
+        payload = jwt.decode(token, "secret", algorithms=["HS256"])
+        return payload
+    except exceptions.ExpiredSignatureError:
+        return {"message": "Token has expired"}
+    except exceptions.JWTError:
+        return {"message": "Invalid token"}
+
 @app.post("/token")
-def login(username: str, password: str):
+def login(user: OAuth2PasswordRequestForm = Depends()):
+    # logins for admin are admin and admin
+    # logins for user are user and user
+    username = user.username
+    password = user.password
+    if username == "admin" and password == "admin":
+        return {
+            "access_token": jwt.encode({"username": username, "password": password}, "secret", algorithm="HS256"),
+            "token_type": "bearer"
+        }
+    elif username == "user" and password == "user":
+        return {
+            "access_token": jwt.encode({"username": username, "password": password}, "secret", algorithm="HS256"),
+            "token_type": "bearer"
+        }
+    else:
+        return {"message": "Invalid credentials"}
 
 
 
@@ -36,7 +61,10 @@ def read_openings(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
 
 @app.post("/openings",
           response_model=dict)
-def create_application(openings: List[OpeningSchema], db: Session = Depends(get_db)):
+def create_application(openings: List[OpeningSchema], db: Session = Depends(get_db), token: dict = Depends(get_token)):
+    if token['username'] != 'admin':
+        return HTTPException(status_code=401, detail="Unauthorized")
+
     return create_openings(db=db, openings=openings)
 
 
@@ -54,7 +82,7 @@ def create_applicant(applicant: ApplicantSchema, db: Session = Depends(get_db)):
 
 
 @app.post("/apply", response_model=dict)
-def apply(applications: List[ApplySchema], db: Session = Depends(get_db)):
+def apply(applications: List[ApplySchema], db: Session = Depends(get_db), _ = Depends(get_token)):
     try:
         for application in applications:
             applicant = get_applicant_by_name(db=db, name=application.applicant_name)
@@ -69,7 +97,7 @@ def apply(applications: List[ApplySchema], db: Session = Depends(get_db)):
         return {"message": str(e)}
 
 @app.get("/applications", response_model=List[dict])
-def read_applications(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def read_applications(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), _ = Depends(get_token)):
     users_applications = []
     applications = db.query(Application).offset(skip).limit(limit).all()
     print(applications)
