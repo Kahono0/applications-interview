@@ -40,6 +40,8 @@ def create_application(db: Session, applicant_id: int, opening_id: int) -> dict:
 def get_openings(db: Session) -> List[OpeningSchema]:
     return [OpeningSchema.from_orm(opening) for opening in db.query(Opening).all()]
 
+def get_applicant_by_name(db: Session, name: str) -> ApplicantSchema:
+    return ApplicantSchema.from_orm(db.query(Applicant).filter(Applicant.name == name).first())
 
 
 
